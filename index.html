@@ -314,8 +314,6 @@
     <div id="screen-controls">
         <button id="main-menu-btn">MAIN MENU</button>
         <button id="restart-btn">RESTART GAME</button>
-        <button id="fullscreen-btn">FULL SCREEN</button>
-        <button id="exit-fullscreen-btn" style="display: none;">SMALL SCREEN</button>
     </div>
 
     <script>
@@ -328,8 +326,6 @@
         const lastMatchImg = document.getElementById('last-match-img');
         const botOnButton = document.getElementById('bot-on-btn');
         const botOffButton = document.getElementById('bot-off-btn');
-        const fullscreenBtn = document.getElementById('fullscreen-btn');
-        const exitFullscreenBtn = document.getElementById('exit-fullscreen-btn');
         const restartBtn = document.getElementById('restart-btn');
         const mainMenuBtn = document.getElementById('main-menu-btn');
         const screenControls = document.getElementById('screen-controls');
@@ -686,40 +682,6 @@
         // --- Restart Button ---
         restartBtn.addEventListener('click', createBoard);
 
-        // --- Fullscreen API Logic ---
-        function openFullscreen() {
-            const elem = document.documentElement;
-            if (elem.requestFullscreen) {
-                elem.requestFullscreen();
-            } else if (elem.webkitRequestFullscreen) { /* Safari */
-                elem.webkitRequestFullscreen();
-            } else if (elem.msRequestFullscreen) { /* IE11 */
-                elem.msRequestFullscreen();
-            }
-        }
-
-        function closeFullscreen() {
-            if (document.exitFullscreen) {
-                document.exitFullscreen();
-            } else if (document.webkitExitFullscreen) { /* Safari */
-                document.webkitExitFullscreen();
-            } else if (document.msExitFullscreen) { /* IE11 */
-                document.msExitFullscreen();
-            }
-        }
-
-        fullscreenBtn.addEventListener('click', openFullscreen);
-        exitFullscreenBtn.addEventListener('click', closeFullscreen);
-
-        document.addEventListener('fullscreenchange', () => {
-            if (document.fullscreenElement) {
-                fullscreenBtn.style.display = 'none';
-                exitFullscreenBtn.style.display = 'inline-block';
-            } else {
-                fullscreenBtn.style.display = 'inline-block';
-                exitFullscreenBtn.style.display = 'none';
-            }
-        });
     </script>
 </body>
 </html>
