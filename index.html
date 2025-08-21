@@ -1,0 +1,725 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Image Memory Game</title>
+    <style>
+        /* --- Basic Setup --- */
+        html, body {
+            height: 100%;
+            width: 100%;
+            margin: 0;
+            padding: 0;
+            overflow: hidden; /* Prevent scrollbars */
+            font-family: 'Inter', sans-serif;
+            background-color: #1a202c; /* Fallback background */
+        }
+
+        /* --- Background Video --- */
+        #bg-video {
+            position: fixed;
+            right: 0;
+            bottom: 0;
+            min-width: 100%;
+            min-height: 100%;
+            z-index: -1; /* Place it behind everything */
+        }
+
+        /* Hide system cursor when game is active */
+        body.game-active.bot-mode {
+            cursor: none;
+        }
+
+        /* --- Start Overlay --- */
+        #start-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(26, 32, 44, 0.9);
+            z-index: 2000;
+            display: flex;
+            flex-direction: column; /* Stack title and buttons vertically */
+            justify-content: center;
+            align-items: center;
+            color: #e2e8f0;
+            cursor: default; /* Change cursor for the overlay */
+            transition: opacity 0.5s ease-out;
+        }
+
+        #start-logo {
+            max-width: 450px; /* Adjust size as needed */
+            width: 50%;
+            height: auto;
+            margin-bottom: 2rem; /* Space between logo and title */
+        }
+
+        #start-overlay h1 {
+            font-size: 3rem;
+            font-weight: bold;
+            margin: 0 0 2rem 0; /* Adjusted margin */
+        }
+
+        .start-button {
+            background-color: #4a5568;
+            border: 2px solid #718096;
+            color: #e2e8f0;
+            padding: 1rem 2rem;
+            font-size: 1.5rem;
+            font-weight: bold;
+            border-radius: 8px;
+            cursor: pointer;
+            margin: 0.5rem;
+            transition: background-color 0.3s, transform 0.3s;
+        }
+
+        .start-button:hover {
+            background-color: #718096;
+            transform: scale(1.05);
+        }
+
+
+        /* --- Game Container --- */
+        .game-container {
+            display: flex;
+            flex-direction: column; /* Stack top bar and game board vertically */
+            width: 60%; /* Occupy 60% of the screen width */
+            height: 100%;
+            box-sizing: border-box;
+            position: absolute;
+            left: 0;
+            top: 0;
+            background-color: rgba(26, 32, 44, 0.7); /* Semi-transparent background */
+            backdrop-filter: blur(5px);
+        }
+        
+        .game-board-area {
+            flex-grow: 1; /* This area will fill the remaining space */
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 0.5rem;
+            box-sizing: border-box;
+            min-height: 0; /* Important for flexbox sizing */
+        }
+
+        .game-board {
+            display: grid;
+            grid-template-columns: repeat(8, 1fr); /* 8 columns */
+            grid-template-rows: repeat(6, 1fr);    /* 6 rows */
+            gap: 0.5rem; /* Smaller gap for more cards */
+            perspective: 1500px;
+            width: 100%;
+            height: 100%;
+        }
+
+        /* --- Card Styling --- */
+        .card {
+            background-color: transparent;
+            width: 100%;
+            height: 100%;
+            cursor: pointer; /* Default cursor for player */
+            position: relative;
+            transform-style: preserve-3d;
+            /* Transition for flipping */
+            transition: transform 0.7s; 
+        }
+
+        .card.bot-mode-card {
+             cursor: inherit; /* Inherit cursor from body in bot mode */
+        }
+
+        /* --- Rubik's Cube Shuffle Animation --- */
+        @keyframes rubik-shuffle {
+            0% { transform: rotateY(0deg) rotateX(0deg); }
+            25% { transform: rotateY(180deg) rotateX(0deg); }
+            50% { transform: rotateY(180deg) rotateX(180deg); }
+            75% { transform: rotateY(0deg) rotateX(180deg); }
+            100% { transform: rotateY(0deg) rotateX(0deg); }
+        }
+
+        .shuffling {
+            animation: rubik-shuffle 1.5s ease-in-out;
+        }
+
+        /* --- Card Flip Animation --- */
+        .card.flipped {
+            transform: rotateY(180deg);
+        }
+
+        /* --- Card Faces (Front and Back) --- */
+        .card-face {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            -webkit-backface-visibility: hidden;
+            backface-visibility: hidden;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            border-radius: 8px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.25);
+            transition: box-shadow 0.3s;
+        }
+        
+        .card:hover .card-face {
+             box-shadow: 0 8px 25px rgba(0,0,0,0.3);
+        }
+
+        /* --- Front Face (Visible initially) --- */
+        .card-front {
+            background-size: cover;
+            background-position: center;
+            background-repeat: no-repeat;
+            background-color: #4a5568;
+        }
+
+        /* --- Back Face (Hidden initially, contains the image) --- */
+        .card-back {
+            background-color: #2d3748; /* Dark grey background */
+            transform: rotateY(180deg);
+            box-sizing: border-box; 
+        }
+        
+        .card-back img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover; 
+            border-radius: 8px;
+        }
+        
+        /* --- Matched Card Style --- */
+        .card.matched .card-back {
+            box-shadow: 0 0 25px 8px #48bb78; /* Green glow for matched cards */
+        }
+
+        /* --- Wrong Pair Style --- */
+        .card.wrong .card-face {
+            box-shadow: 0 0 25px 8px #e53e3e; /* Red glow for wrong cards */
+        }
+
+        /* --- Startup Glow Effect --- */
+        .card.glow .card-face {
+            box-shadow: 0 0 25px 8px #4299e1; /* Blue glow */
+        }
+
+        /* --- Bot's Cursor --- */
+        #bot-cursor {
+            position: absolute;
+            width: 40px; /* Adjust size as needed */
+            height: 40px;
+            z-index: 1000;
+            pointer-events: none; /* So it doesn't block interactions */
+            transition: top 0.7s ease-in-out, left 0.7s ease-in-out; /* Faster cursor movement */
+            transform: translate(-50%, -50%); /* Center the cursor image on the coordinates */
+            display: none; /* Hidden by default */
+        }
+
+        #bot-cursor.visible {
+            display: block;
+        }
+
+        /* --- Match Display Area (Right Side) --- */
+        #match-display-area {
+            position: absolute;
+            width: 40%;
+            height: 100%;
+            right: 0;
+            top: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 2rem;
+            box-sizing: border-box;
+            background-color: rgba(26, 32, 44, 0.7); /* Semi-transparent background */
+            backdrop-filter: blur(5px);
+        }
+
+        #last-match-img {
+            max-width: 100%;
+            max-height: 100%;
+            object-fit: contain;
+            border-radius: 16px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+            opacity: 0;
+            transform: scale(0.8);
+            transition: opacity 0.5s ease-out, transform 0.5s ease-out;
+        }
+
+        #last-match-img.visible {
+            opacity: 1;
+            transform: scale(1);
+        }
+
+        /* --- Screen Control Buttons --- */
+        #screen-controls {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            z-index: 3000;
+            display: none; /* Hide by default */
+            opacity: 0;
+            transition: opacity 0.5s ease-in-out;
+        }
+
+        #screen-controls button {
+            background-color: #4a5568;
+            border: 2px solid #718096;
+            color: #e2e8f0;
+            padding: 0.5rem 1rem;
+            font-size: 1rem;
+            font-weight: bold;
+            border-radius: 8px;
+            cursor: pointer;
+            margin-left: 0.5rem;
+            transition: background-color 0.3s;
+        }
+
+        #screen-controls button:hover {
+            background-color: #718096;
+        }
+
+    </style>
+</head>
+<body>
+    <video muted loop id="bg-video">
+        <source src="funmaniax-03.mp4" type="video/mp4">
+        Your browser does not support the video tag.
+    </video>
+
+    <div id="start-overlay">
+        <img src="logo.png" alt="Game Logo" id="start-logo">
+        <h1>Select Game Mode</h1>
+        <div>
+            <button class="start-button" id="bot-on-btn">BOT MODE: ON</button>
+            <button class="start-button" id="bot-off-btn">BOT MODE: OFF</button>
+        </div>
+    </div>
+
+    <div class="game-container">
+        <div class="game-board-area">
+            <div class="game-board" id="gameBoard">
+                </div>
+        </div>
+    </div>
+
+    <div id="match-display-area">
+        <img id="last-match-img" src="" alt="Last Matched Card">
+    </div>
+
+    <img id="bot-cursor" src="cursor.png" alt="">
+
+    <div id="screen-controls">
+        <button id="main-menu-btn">MAIN MENU</button>
+        <button id="restart-btn">RESTART GAME</button>
+        <button id="fullscreen-btn">FULL SCREEN</button>
+        <button id="exit-fullscreen-btn" style="display: none;">SMALL SCREEN</button>
+    </div>
+
+    <script>
+        // --- DOM Elements ---
+        const gameBoard = document.getElementById('gameBoard');
+        const botCursor = document.getElementById('bot-cursor');
+        const startOverlay = document.getElementById('start-overlay');
+        const gameContainer = document.querySelector('.game-container');
+        const bgVideo = document.getElementById('bg-video');
+        const lastMatchImg = document.getElementById('last-match-img');
+        const botOnButton = document.getElementById('bot-on-btn');
+        const botOffButton = document.getElementById('bot-off-btn');
+        const fullscreenBtn = document.getElementById('fullscreen-btn');
+        const exitFullscreenBtn = document.getElementById('exit-fullscreen-btn');
+        const restartBtn = document.getElementById('restart-btn');
+        const mainMenuBtn = document.getElementById('main-menu-btn');
+        const screenControls = document.getElementById('screen-controls');
+
+
+        // --- Game Assets ---
+        const imageCount = 24; // 24 unique images for 48 cards
+        const imagePaths = [];
+        for (let i = 1; i <= imageCount; i++) {
+            imagePaths.push(`image (${i}).png`);
+        }
+        const cardValues = [...imagePaths, ...imagePaths]; // Create pairs for each image
+
+        // --- Game State Variables ---
+        let hasFlippedCard = false;
+        let lockBoard = false;
+        let firstCard, secondCard;
+        let hintCard1, hintCard2; // To store the hint cards
+        let matchedPairs = 0;
+        let isBotMode = true; // Default to bot mode on, will be set by user
+
+        // --- Bot State Variables ---
+        let botMemory = new Map(); // Stores { value -> [indices] } of seen cards
+        let isFirstTurn = true; // Flag for the bot's first move
+        
+        /**
+         * Plays a sound effect.
+         * @param {string} soundFile The path to the sound file.
+         */
+        function playSound(soundFile) {
+            const audio = new Audio(soundFile);
+            audio.play().catch(error => {
+                // Autoplay was prevented. This is a common browser policy.
+                // No need to log an error to the user console.
+            });
+        }
+
+        /**
+         * Shuffles an array in place using the Fisher-Yates algorithm.
+         */
+        function shuffle(array) {
+            for (let i = array.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [array[i], array[j]] = [array[j], array[i]];
+            }
+        }
+
+        /**
+         * Creates the HTML for the game board and starts the game.
+         */
+        async function createBoard() {
+            gameBoard.innerHTML = '';
+            shuffle(cardValues);
+            
+            // Reset game and bot state
+            matchedPairs = 0;
+            lastMatchImg.src = '';
+            lastMatchImg.classList.remove('visible');
+            botMemory.clear();
+            isFirstTurn = true;
+            resetBoard(); // Ensure board is not locked
+
+            // Create card elements
+            cardValues.forEach((value, index) => {
+                const card = document.createElement('div');
+                card.classList.add('card');
+                if (isBotMode) {
+                    card.classList.add('bot-mode-card');
+                }
+                card.dataset.value = value;
+                card.dataset.index = index;
+
+                card.innerHTML = `
+                    <div class="card-face card-front" style="background-image: url('backimage.png');"></div>
+                    <div class="card-face card-back">
+                        <img src="${value}" alt="Card Image" onerror="this.onerror=null;this.src='https://placehold.co/100x100/333/FFF?text=Error';">
+                    </div>
+                `;
+                gameBoard.appendChild(card);
+                
+                // Add click listener for player mode
+                if (!isBotMode) {
+                    card.addEventListener('click', flipCard);
+                }
+            });
+            
+            if (isBotMode) {
+                botCursor.classList.add('visible');
+                // Set initial cursor position to center of the game container
+                botCursor.style.transition = 'none';
+                const gameRect = gameContainer.getBoundingClientRect();
+                botCursor.style.left = `${gameRect.left + gameRect.width / 2}px`;
+                botCursor.style.top = `${gameRect.top + gameRect.height / 2}px`;
+                botCursor.offsetHeight; // Force a reflow
+                botCursor.style.transition = 'top 0.7s ease-in-out, left 0.7s ease-in-out';
+            }
+
+
+            // Wait 1 second before starting the shuffle animation
+            await sleep(1000);
+
+            // --- Rubik's Cube Shuffling Animation ---
+            // Play the shuffle sound 5 times with a slight delay
+            for (let i = 0; i < 5; i++) {
+                setTimeout(() => playSound('cardflip.mp3'), i * 250);
+            }
+            const allCards = Array.from(document.querySelectorAll('.card'));
+            const animationPromises = allCards.map((card) => {
+                return new Promise(resolve => {
+                    const delay = Math.random() * 1000; // Random delay up to 1 second
+                    card.style.animationDelay = `${delay}ms`;
+                    card.classList.add('shuffling');
+
+                    // The 'animationend' event listener cleans up after the animation is complete.
+                    card.addEventListener('animationend', () => {
+                        card.classList.remove('shuffling');
+                        card.style.animationDelay = '';
+                        resolve();
+                    }, { once: true });
+                });
+            });
+
+            // Wait for all individual card animations to finish before proceeding.
+            await Promise.all(animationPromises);
+
+            if (isBotMode) {
+                 // --- Hint Logic (Only for Bot) ---
+                const hintValue = imagePaths[Math.floor(Math.random() * imagePaths.length)];
+                const hintIndex1 = cardValues.indexOf(hintValue);
+                const hintIndex2 = cardValues.indexOf(hintValue, hintIndex1 + 1);
+
+                hintCard1 = allCards[hintIndex1]; // Assign to global variable
+                hintCard2 = allCards[hintIndex2]; // Assign to global variable
+
+                // Add a one-time startup glow effect as a hint
+                if (hintCard1) hintCard1.classList.add('glow');
+                if (hintCard2) hintCard2.classList.add('glow');
+                
+                await new Promise(resolve => setTimeout(resolve, 1500)); // Duration of the glow
+                
+                if (hintCard1) hintCard1.classList.remove('glow');
+                if (hintCard2) hintCard2.classList.remove('glow');
+                
+                // --- Start the game loop for the bot ---
+                const gameLoop = async () => {
+                    while (matchedPairs < imageCount) {
+                        await botPlayTurn(); // Perform one turn
+                    }
+                    console.log("Game over. Stopping loop.");
+                };
+
+                // Kick off the first turn immediately
+                gameLoop();
+            }
+        }
+
+        /**
+         * Handles the logic for flipping a card, called by the bot or player.
+         */
+        function flipCard() {
+            if (lockBoard || this.classList.contains('matched') || this === firstCard) return;
+            
+            playSound('click.ogg');
+            this.classList.add('flipped');
+            
+            if (isBotMode) {
+                const value = this.dataset.value;
+                const index = parseInt(this.dataset.index);
+                if (!botMemory.has(value)) botMemory.set(value, []);
+                if (!botMemory.get(value).includes(index)) botMemory.get(value).push(index);
+            }
+
+
+            if (!hasFlippedCard) {
+                hasFlippedCard = true;
+                firstCard = this;
+            } else {
+                hasFlippedCard = false;
+                secondCard = this;
+                checkForMatch();
+            }
+        }
+
+        /**
+         * Checks if the two flipped cards are a match.
+         */
+        function checkForMatch() {
+            lockBoard = true;
+            const isMatch = firstCard.dataset.value === secondCard.dataset.value;
+            isMatch ? disableCards() : unflipCards();
+        }
+
+        /**
+         * Disables matching cards and checks for a win.
+         */
+        function disableCards() {
+            playSound('correct.ogg');
+            firstCard.classList.add('matched');
+            secondCard.classList.add('matched');
+            
+            // Update the display image on the right
+            lastMatchImg.src = firstCard.dataset.value;
+            lastMatchImg.classList.add('visible');
+
+            matchedPairs++;
+            
+            resetBoard();
+        }
+
+        /**
+         * Flips non-matching cards back over.
+         */
+        function unflipCards() {
+            playSound('wrong.ogg');
+            firstCard.classList.add('wrong');
+            secondCard.classList.add('wrong');
+
+            setTimeout(() => {
+                firstCard.classList.remove('flipped');
+                secondCard.classList.remove('flipped');
+                firstCard.classList.remove('wrong');
+                secondCard.classList.remove('wrong');
+                resetBoard();
+            }, 1200);
+        }
+
+        /**
+         * Resets the turn state variables.
+         */
+        function resetBoard() {
+            [hasFlippedCard, lockBoard] = [false, false];
+            [firstCard, secondCard] = [null, null];
+        }
+        
+        // --- Bot Logic ---
+        const sleep = ms => new Promise(res => setTimeout(res, ms));
+
+        async function moveCursorToCard(card) {
+            if (!card) return;
+            const cardRect = card.getBoundingClientRect();
+            botCursor.style.left = `${cardRect.left + cardRect.width / 2}px`;
+            botCursor.style.top = `${cardRect.top + cardRect.height / 2}px`;
+            await sleep(700); // Wait for faster CSS transition to complete
+        }
+
+        async function botPlayTurn() {
+            if (lockBoard) return;
+
+            // --- Bot's First Turn: Play the Hint ---
+            if (isFirstTurn) {
+                isFirstTurn = false; // Ensure this only runs once
+                if (hintCard1 && hintCard2) {
+                    await moveCursorToCard(hintCard1);
+                    flipCard.call(hintCard1);
+
+                    await sleep(600);
+
+                    await moveCursorToCard(hintCard2);
+                    flipCard.call(hintCard2);
+                    
+                    await sleep(1500); // Wait for match logic to complete
+                }
+                return; // End the first turn here
+            }
+
+            // --- Regular Bot Turn Logic ---
+            const cards = Array.from(gameBoard.children);
+            let firstPick = null;
+            let secondPick = null;
+
+            // 1. Check memory for a guaranteed pair
+            for (const [value, indices] of botMemory.entries()) {
+                if (indices.length === 2) {
+                    const card1 = cards[indices[0]];
+                    const card2 = cards[indices[1]];
+                    if (!card1.classList.contains('matched')) {
+                        firstPick = card1;
+                        secondPick = card2;
+                        break;
+                    }
+                }
+            }
+
+            // 2. If no known pair, explore
+            if (!firstPick) {
+                const availableCards = cards.filter(card => !card.classList.contains('matched'));
+                if (availableCards.length < 2) return;
+
+                const knownUnmatched = availableCards.find(card => botMemory.has(card.dataset.value) && botMemory.get(card.dataset.value).length === 1);
+                const unknown = availableCards.filter(card => !botMemory.has(card.dataset.value));
+
+                if (knownUnmatched && unknown.length > 0) {
+                    firstPick = knownUnmatched;
+                    secondPick = unknown[Math.floor(Math.random() * unknown.length)];
+                } else {
+                    const firstIndex = Math.floor(Math.random() * availableCards.length);
+                    firstPick = availableCards[firstIndex];
+                    availableCards.splice(firstIndex, 1);
+                    const secondIndex = Math.floor(Math.random() * availableCards.length);
+                    secondPick = availableCards[secondIndex];
+                }
+            }
+            
+            if (firstPick && secondPick) {
+                await moveCursorToCard(firstPick);
+                flipCard.call(firstPick);
+
+                await sleep(600); // Pause between flips
+
+                await moveCursorToCard(secondPick);
+                flipCard.call(secondPick);
+                
+                // Wait for the unflip/match animation to resolve before the loop continues
+                await sleep(1500); 
+            }
+        }
+
+        // --- Initial Game Start ---
+        function startGame() {
+            bgVideo.play(); // Explicitly play the video on user interaction
+            document.body.classList.add('game-active');
+             if (isBotMode) {
+                document.body.classList.add('bot-mode');
+            }
+            startOverlay.style.opacity = '0';
+            setTimeout(() => {
+                startOverlay.style.display = 'none';
+            }, 500); // Wait for fade-out transition to finish
+            
+            // Show the game controls
+            screenControls.style.display = 'block';
+            setTimeout(() => { // Use timeout to allow the display property to apply before transitioning opacity
+                screenControls.style.opacity = '1';
+            }, 10);
+
+            createBoard();
+        }
+
+        botOnButton.addEventListener('click', () => {
+            isBotMode = true;
+            startGame();
+        });
+
+        botOffButton.addEventListener('click', () => {
+            isBotMode = false;
+            startGame();
+        });
+        
+        // --- Main Menu Button ---
+        mainMenuBtn.addEventListener('click', () => {
+            window.location.reload();
+        });
+
+        // --- Restart Button ---
+        restartBtn.addEventListener('click', createBoard);
+
+        // --- Fullscreen API Logic ---
+        function openFullscreen() {
+            const elem = document.documentElement;
+            if (elem.requestFullscreen) {
+                elem.requestFullscreen();
+            } else if (elem.webkitRequestFullscreen) { /* Safari */
+                elem.webkitRequestFullscreen();
+            } else if (elem.msRequestFullscreen) { /* IE11 */
+                elem.msRequestFullscreen();
+            }
+        }
+
+        function closeFullscreen() {
+            if (document.exitFullscreen) {
+                document.exitFullscreen();
+            } else if (document.webkitExitFullscreen) { /* Safari */
+                document.webkitExitFullscreen();
+            } else if (document.msExitFullscreen) { /* IE11 */
+                document.msExitFullscreen();
+            }
+        }
+
+        fullscreenBtn.addEventListener('click', openFullscreen);
+        exitFullscreenBtn.addEventListener('click', closeFullscreen);
+
+        document.addEventListener('fullscreenchange', () => {
+            if (document.fullscreenElement) {
+                fullscreenBtn.style.display = 'none';
+                exitFullscreenBtn.style.display = 'inline-block';
+            } else {
+                fullscreenBtn.style.display = 'inline-block';
+                exitFullscreenBtn.style.display = 'none';
+            }
+        });
+    </script>
+</body>
+</html>
